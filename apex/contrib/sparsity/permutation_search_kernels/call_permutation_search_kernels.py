@@ -109,17 +109,3 @@ def accelerated_search_for_good_permutation(matrix_group, options=None):
     #print("[accelerated_search_for_good_permutation] The length of permutation sequence is: {:}".format(len(permutation_sequence)))
     print("[accelerated_search_for_good_permutation] The total magnitude using the {} strategy is: {}".format(options["strategy"], sum_after_2_to_4(result)))
     return permutation_sequence
-
-if __name__ == "__main__":
-    # mohit-mhjn (mohitm3@illinois.edu) - experimenting with 2:4 sparsity
-    from torchvision.models import resnet50
-    pretrained = resnet50(pretrained=True)
-    my_matrix_group = pretrained.layer3[0].conv3.weight  # Change this for different matrix dimensions
-    accelerated_search_for_good_permutation(my_matrix_group, options={
-        "strategy": "progressive channel swap - SA",
-        # "strategy": "progressive channel swap",
-        "progressive_search_time_limit": 3600,  # Relax this limit for experiment
-        "SA_initial_t": 1,
-        "SA_room_t": 10e-3,
-        "SA_tfactor": 0.90,
-        "SA_epochs": 100})
