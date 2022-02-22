@@ -1,5 +1,5 @@
 # mohit-mhjn (mohitm3@illinois.edu) - experimenting with 2:4 sparsity
-from torchvision.models import resnet50, v
+from torchvision.models import resnet50
 import apex.contrib.sparsity.permutation_search_kernels as psk
 
 if __name__ == "__main__":
@@ -20,7 +20,7 @@ if __name__ == "__main__":
         psk.accelerated_search_for_good_permutation(my_matrix_group, options={
             "strategy": "progressive channel swap - SA",
             # "strategy": "progressive channel swap",
-            "progressive_search_time_limit": 3600,  # Relax this limit for experiment
+            "progressive_search_time_limit": 999,  # Relax this limit for experiment
             "SA_initial_t": 1,
             "SA_room_t": 10e-3,
             "SA_tfactor": 0.90,
@@ -30,18 +30,18 @@ if __name__ == "__main__":
         for strategy in strategy_set:
             for my_matrix_group in test_matrices:
                 for _ in range(retrial_per_scenario):
-                    print("\t[Compare permutation search kernels]: Attempt {} for matrix "
-                          "shape ({},{}) using {} strategy ".format(_, my_matrix_group.shape[0],
+                    print("[Compare permutation search kernels]: Attempt {} for matrix "
+                          "shape ({},{}) using {} strategy".format(_, my_matrix_group.shape[0],
                                                                     my_matrix_group.shape[1],
                                                                     strategy))
                     psk.accelerated_search_for_good_permutation(my_matrix_group, options={
                         "strategy": strategy,
                         # "strategy": "progressive channel swap",
-                        "progressive_search_time_limit": 3600,  # Relax this limit for experiment
+                        "progressive_search_time_limit": 999,  # Relax this limit for experiment
                         "SA_initial_t": 1,
                         "SA_room_t": 10e-3,
                         "SA_tfactor": 0.90,
                         "SA_epochs": 100})
     else:
-        print("\t[Compare permutation search kernels]: Invalid mode selection!")
+        print("[Compare permutation search kernels]: Invalid mode selection!")
         exit(-1)

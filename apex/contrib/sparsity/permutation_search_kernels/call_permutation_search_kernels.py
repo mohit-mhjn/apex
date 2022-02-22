@@ -97,7 +97,7 @@ def accelerated_search_for_good_permutation(matrix_group, options=None):
                     continue
             temperature = temperature*SA_tfactor
         duration = time.perf_counter() - start_time
-        print("\tFinally swap {} channel pairs until the search time limit expires.".format(real_swap_num))
+        print("\tFinally swap {} channel pairs until the search termination criteria".format(real_swap_num))
     elif options['strategy'] == 'user defined':    # need to get the permutated matrix (result) by applying customized permutation search function
         print("[accelerated_search_for_good_permutation] Use the user customized permutation search function!")
     else:
