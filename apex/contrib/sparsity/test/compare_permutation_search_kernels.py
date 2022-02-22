@@ -1,6 +1,6 @@
 # mohit-mhjn (mohitm3@illinois.edu) - experimenting with 2:4 sparsity
 from torchvision.models import resnet50
-import apex.contrib.sparsity.permutation_search_kernels as psk
+import permutation_search_kernels as psk
 
 if __name__=="__main__":
     pretrained = resnet50(pretrained=True)
