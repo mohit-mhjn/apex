@@ -10,7 +10,8 @@ def accelerated_search_for_good_permutation(matrix_group, options=None):
     input_matrix = matrix_group.cpu().detach().numpy()
 
     # mohit: Temporary patch - need deep knowledge of matrix group here
-    input_matrix = input_matrix.reshape(w.shape[0], w.shape[1])
+    # If input matrix is 2D - following operation wouldn't change anything
+    input_matrix = input_matrix.reshape(input_matrix.shape[0], input_matrix.shape[1])
 
     print("\n[accelerated_search_for_good_permutation] input matrix shape: \'{:}\'.".format(input_matrix.shape))
 
