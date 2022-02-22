@@ -29,7 +29,7 @@ def accelerated_search_for_good_permutation(matrix_group, options=None):
             options['stripe_group_size'] = 8
         if 'escape_attempts' not in options:
             options['escape_attempts'] = 100
-    elif options['strategy'] == 'progressive channel swap':
+    elif options['strategy'] in ['progressive channel swap', 'progressive channel swap - SA']:  # copy param defaults of progressive search to progressive search - SA
         # just swaps meaningful channels, keeping the good swaps, until the search time limit expires.
         if 'progressive_search_time_limit' not in options:
             options['progressive_search_time_limit'] = 60
@@ -56,6 +56,43 @@ def accelerated_search_for_good_permutation(matrix_group, options=None):
                 real_swap_num += 1
         duration = time.perf_counter() - start_time
         print("\tFinally swap {} channel pairs until the search time limit expires.".format(real_swap_num))
+    elif options['strategy'] == 'progressive channel swap - SA':
+        real_swap_num = 0
+        start_time = time.perf_counter()
+        # mohit: Get Essential Parameters for simulated annealing, defaults returned
+        SA_initial_t = options.get("SA_initial_t", 1)  # Starting temperature (boiling point)
+        SA_room_t = options.get("SA_room_t", 10e-6)  # Steady state temperature
+        SA_tfactor = options.get("SA_tfactor", 0.90)  # Temperature falls by this factor
+        SA_epochs = options.get("SA_epochs",100)  # Temperature steps
+
+        # while time.perf_counter() - start_time < options['progressive_search_time_limit']:
+        # todo: Handle time_limit parameter
+
+        temperature = SA_initial_t
+        while temperature > SA_room_t:
+            for e in range(SA_epochs):
+                src = np.random.randint(result.shape[1])
+                dst = np.random.randint(result.shape[1])
+                src_group = int(src/4)
+                dst_group = int(dst/4)
+                if src_group == dst_group:    # channel swapping within a stripe does nothing
+                    continue
+                new_sum, improvement = try_swap(result, dst, src)
+                # mohit: Always accept if that's a good swap!
+                if improvement > options['improvement_threshold']:
+                    result[...,[src,dst]] = result[...,[dst,src]]
+                    permutation_sequence[src], permutation_sequence[dst] = permutation_sequence[dst], permutation_sequence[src]
+                    real_swap_num += 1
+                # mohit: accept the worse swap with some probability (determined through SA progress)
+                elif np.exp(improvement/temperature) > np.random.uniform(0, 1):
+                    result[..., [src, dst]] = result[..., [dst, src]]
+                    permutation_sequence[src], permutation_sequence[dst] = permutation_sequence[dst], permutation_sequence[src]
+                    real_swap_num += 1
+                else:
+                    continue
+            temperature = temperature*SA_tfactor
+        duration = time.perf_counter() - start_time
+        print("\tFinally swap {} channel pairs until the search time limit expires.".format(real_swap_num))
     elif options['strategy'] == 'user defined':    # need to get the permutated matrix (result) by applying customized permutation search function
         print("[accelerated_search_for_good_permutation] Use the user customized permutation search function!")
     else:
@@ -70,5 +107,19 @@ def accelerated_search_for_good_permutation(matrix_group, options=None):
     #print("[accelerated_search_for_good_permutation] Take {:.4f} seconds to finish find_permutation function.".format(duration_find_permutation))
     #print("[accelerated_search_for_good_permutation] The permutation sequence is: {:}".format(permutation_sequence))
     #print("[accelerated_search_for_good_permutation] The length of permutation sequence is: {:}".format(len(permutation_sequence)))
-
+    print("[accelerated_search_for_good_permutation] The total magnitude using the {} strategy is: {}".format(options["strategy"], sum_after_2_to_4(result)))
     return permutation_sequence
+
+if __name__ == "__main__":
+    # mohit-mhjn (mohitm3@illinois.edu) - experimenting with 2:4 sparsity
+    from torchvision.models import resnet50
+    pretrained = resnet50(pretrained=True)
+    my_matrix_group = pretrained.layer3[0].conv3.weight  # Change this for different matrix dimensions
+    accelerated_search_for_good_permutation(my_matrix_group, options={
+        "strategy": "progressive channel swap - SA",
+        # "strategy": "progressive channel swap",
+        "progressive_search_time_limit": 3600,  # Relax this limit for experiment
+        "SA_initial_t": 1,
+        "SA_room_t": 10e-3,
+        "SA_tfactor": 0.90,
+        "SA_epochs": 100})
