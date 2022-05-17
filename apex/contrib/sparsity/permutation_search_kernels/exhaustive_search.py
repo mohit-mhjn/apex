@@ -347,7 +347,8 @@ def Exhaustive_Search(matrix, stripe_group_size=-1, escape_attempts=0, permutati
         cur_total_sum = sum_after_2_to_4(result)
 
         # in practice, this work will be cached ahead of time; doing it now.
-        # (Reading the cached list from disk can take several seconds, which shouldn't be counted against the search, but amortized over every layer in a network)
+        # (Reading the cached list from disk can take several seconds, which shouldn't be counted
+        # against the search, but amortized over every layer in a network)
         generate_all_unique_combinations(stripe_group_size, group_width)
 
         start_time = time.perf_counter()
