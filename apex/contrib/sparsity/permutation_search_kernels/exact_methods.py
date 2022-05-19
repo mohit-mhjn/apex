@@ -15,7 +15,7 @@ except:
 # ==================== BASE ===================
 logging.basicConfig()
 logger = logging.getLogger(__name__ + ': ')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 # ============== Traceback Mechanics =====================
@@ -99,12 +99,18 @@ class OptimizationModel(object):
 
         return least_index, second_least_index
 
-    def __init__(self, input_matrix):
-        logger.info(""" The input matrix is converted to COLUMN-MAJOR
+    def __init__(self, input_matrix, matrix_layout="row_major"):
+
+        assert matrix_layout in ["row_major", "column_major"], "matrix_layout is row_major or column_major"
+
+        if matrix_layout=="row_major":
+            logger.info(""" The input matrix is converted to COLUMN-MAJOR
                     Note: A 2D column major input matrix differs from a usual matrix in terms of indexing.
                     An access for index i,j using M[i][j] returns the value from column - i and row - j """)
+            self.input_matrix = np.transpose(input_matrix)
+        else:
+            self.input_matrix = input_matrix
 
-        self.input_matrix = np.transpose(input_matrix)
         self.number_of_columns = self.input_matrix.shape[0]
         self.number_of_rows = self.input_matrix.shape[1]
         self.number_of_partitions = int(self.number_of_columns / 4)
@@ -232,6 +238,20 @@ class OptimizationModel(object):
 
         return True
 
+    def get_apex_solution(self):
+
+        assert self.check_solve_status(), "Unable to verify model solve!"
+
+        if self._is_subset:
+            logger.error("NVIDIA Apex integration doesn't permit solving on subset "
+                         "of columns, pls execute solve for the full matrix")
+            raise ModelNotSolvedException
+        else:
+            permutation_sequence = [column_index for partition in self.solutions for column_index in partition]
+            duration = self.preprocessing_time + self.optimization_time + self.postprocessing_time
+            result = np.transpose(self.input_matrix)[permutation_sequence, :]
+        return result, duration, permutation_sequence
+
     def construct_solution(self):
         assert self.check_solve_status(), "Unable to verify model solve!"
 
@@ -354,6 +374,7 @@ class BqpModel(OptimizationModel):
     """
     Naive Quadratic version of the naive 2:4 sparsity pruning problem
     """
+
     def __init__(self, input_matrix):
         logger.info("This is a BQP-formulation")
         super().__init__(input_matrix)
@@ -490,11 +511,13 @@ class BqpModel(OptimizationModel):
         post_end_time = time.time()
         self.postprocessing_time += round(post_end_time - post_start_time, 3)
 
+
 # ==============  Linear Model  =====================
 class BlpModel(OptimizationModel):
     """
     Linearized version of the naive 2:4 sparsity pruning problem
     """
+
     # todo: solve LP relaxation of this model
 
     def __init__(self, input_matrix):
@@ -926,9 +949,10 @@ class SetPartitionModel(OptimizationModel):
     """
     set-packing version of the 2:4 sparsity pruning problem
     """
-    def __init__(self, input_matrix):
+
+    def __init__(self, input_matrix, **kwargs):
         logger.info("This is a set-packing Formulation")
-        super().__init__(input_matrix)
+        super().__init__(input_matrix, matrix_layout=kwargs["matrix_layout"])
         self.config["SETPART"] = {"relax_x_vars": False}
 
         self.model = grb.Model('24sparsity_setPack')
@@ -1054,6 +1078,13 @@ class SetPartitionModel(OptimizationModel):
 
 
 if __name__ == "__main__":
+
+    logger.info(" ================== TEST 1 => ")
+    matrix = OptimizationModel.create_input_matrix(24, 24)
+    opt = SetPartitionModel(matrix)
+    opt.solve()
+    opt.construct_solution()
+
     logger.info(" *********************************** TESTING baseClass\n\n")
 
     matrix = OptimizationModel.create_input_matrix(64, 32, None)
@@ -1112,11 +1143,6 @@ if __name__ == "__main__":
     opt.construct_solution()
     opt.pprint_output()
 
-
 # Std dev of partition costs
 # weakness of lower bound
 #
-
-
-
-
