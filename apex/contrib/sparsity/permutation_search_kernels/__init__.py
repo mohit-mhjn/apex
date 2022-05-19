@@ -1,2 +1,3 @@
 from .call_permutation_search_kernels import accelerated_search_for_good_permutation
 from .permutation_utilities import sum_after_2_to_4
+from .exact_methods import OptimizationModel
