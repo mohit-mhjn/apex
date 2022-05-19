@@ -2,7 +2,7 @@
 Column Generation Method applied to 2:4 sparsity permutation problem
 """
 import random
-from exact_methods import *
+from .exact_methods import *
 
 try:
     import gurobipy as grb

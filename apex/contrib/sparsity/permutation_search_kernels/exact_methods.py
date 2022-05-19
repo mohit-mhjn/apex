@@ -15,7 +15,7 @@ except:
 # ==================== BASE ===================
 logging.basicConfig()
 logger = logging.getLogger(__name__ + ': ')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 
 
 # ============== Traceback Mechanics =====================
@@ -249,7 +249,7 @@ class OptimizationModel(object):
         else:
             permutation_sequence = [column_index for partition in self.solutions for column_index in partition]
             duration = self.preprocessing_time + self.optimization_time + self.postprocessing_time
-            result = np.transpose(self.input_matrix)[permutation_sequence, :]
+            result = np.transpose(self.input_matrix)[:, permutation_sequence]
         return result, duration, permutation_sequence
 
     def construct_solution(self):
@@ -682,7 +682,7 @@ class MdaModel(OptimizationModel):
     def __init__(self, input_matrix):
         logger.info("This is a 4-Dimensional Assignment Formulation")
         super().__init__(input_matrix)
-        self.config["MDA"] = {"relax_y_vars": True,
+        self.config["MDA"] = {"relax_z_vars": True,
                               "relax_x_vars": False}
 
         # Model Specific Things
@@ -952,7 +952,7 @@ class SetPartitionModel(OptimizationModel):
 
     def __init__(self, input_matrix, **kwargs):
         logger.info("This is a set-packing Formulation")
-        super().__init__(input_matrix, matrix_layout=kwargs["matrix_layout"])
+        super().__init__(input_matrix, **kwargs)
         self.config["SETPART"] = {"relax_x_vars": False}
 
         self.model = grb.Model('24sparsity_setPack')

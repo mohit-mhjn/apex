@@ -26,6 +26,9 @@ class EmulateTorchPretrained(object):
     def shape(self):
         return self.matrix.shape
 
+    def size(self):
+        return [self.matrix.shape[0], self.matrix.shape[1], 1, 1]
+
 
 if __name__ == "__main__":
     # All scenario settings configured here >>
@@ -64,7 +67,7 @@ if __name__ == "__main__":
     for strategy in strategy_set:
         for my_matrix_group in test_matrices:
             for _ in range(retrial_per_scenario):
-                print("[Compare permutation search kernels]: Attempt {} for matrix "
+                print("\n[Compare permutation search kernels]: Attempt {} for matrix "
                       "shape ({},{}) using {} strategy".format(_, my_matrix_group.shape[0],
                                                                my_matrix_group.shape[1],
                                                                strategy))

@@ -135,6 +135,10 @@ def accelerated_search_for_good_permutation(matrix_group, options=None):
     # print("[accelerated_search_for_good_permutation] Take {:.4f} seconds to finish find_permutation function.".format(duration_find_permutation))
     # print("[accelerated_search_for_good_permutation] The permutation sequence is: {:}".format(permutation_sequence))
     # print("[accelerated_search_for_good_permutation] The length of permutation sequence is: {:}".format(len(permutation_sequence)))
+    magnitude = sum_after_2_to_4(result)
+    deleted = np.sum(result) - magnitude
     print("[accelerated_search_for_good_permutation] The total magnitude using the {} strategy is: {}".format(
-        options["strategy"], sum_after_2_to_4(result)))
+        options["strategy"], magnitude))
+    print("[accelerated_search_for_good_permutation] The total sum of entries deleted using the {} strategy is: {}".format(
+        options["strategy"], deleted))
     return permutation_sequence
