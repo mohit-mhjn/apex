@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from collections import defaultdict
 from itertools import combinations
+from .permutation_utilities import *
 
 try:
     import gurobipy as grb
@@ -103,7 +104,7 @@ class OptimizationModel(object):
 
         assert matrix_layout in ["row_major", "column_major"], "matrix_layout is row_major or column_major"
 
-        if matrix_layout=="row_major":
+        if matrix_layout == "row_major":
             logger.info(""" The input matrix is converted to COLUMN-MAJOR
                     Note: A 2D column major input matrix differs from a usual matrix in terms of indexing.
                     An access for index i,j using M[i][j] returns the value from column - i and row - j """)
@@ -164,6 +165,17 @@ class OptimizationModel(object):
             cost_of_delete += _array[temp2] + _array[temp1]
 
         return _key, cost_of_delete
+
+    def get_partition_cost_cuda(self, i, j, k, l):
+        """
+        Utility function to return the cost of a partition with columns i,j,k,l computed in parallel
+        """
+        cols = self.number_of_columns
+        rows = self.number_of_rows
+        s = self.input_matrix[[i, j, k, l], :]
+        _key = cols * cols * cols * i + cols * cols * j + cols * k + l
+        mag = sum_after_2_to_4(np.transpose(s))
+        return _key, np.sum(s) - mag
 
     def subset_columns(self, columns):
         """

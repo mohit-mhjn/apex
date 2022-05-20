@@ -15,6 +15,7 @@ def accelerated_search_for_good_permutation(matrix_group, options=None):
     # mohit: Temporary patch - need deep knowledge of matrix group here
     # If input matrix is 2D - following operation wouldn't change anything
     input_matrix = input_matrix.reshape(input_matrix.shape[0], input_matrix.shape[1])
+    input_matrix = np.abs(input_matrix)
 
     print("\n[accelerated_search_for_good_permutation] input matrix shape: \'{:}\'.".format(input_matrix.shape))
 
@@ -73,10 +74,10 @@ def accelerated_search_for_good_permutation(matrix_group, options=None):
         real_swap_num = 0
         start_time = time.perf_counter()
         # mohit: Get Essential Parameters for simulated annealing, defaults returned
-        SA_initial_t = options.get("SA_initial_t", 1)  # Starting temperature (boiling point)
-        SA_room_t = options.get("SA_room_t", 10e-6)  # Steady state temperature
-        SA_tfactor = options.get("SA_tfactor", 0.90)  # Temperature falls by this factor
-        SA_epochs = options.get("SA_epochs", 100)  # Temperature steps
+        SA_initial_t = options.get("SA_initial_t", 1000)  # Starting temperature (boiling point)
+        SA_room_t = options.get("SA_room_t", 10e-3)  # Steady state temperature
+        SA_tfactor = options.get("SA_tfactor", 0.95)  # Temperature falls by this factor
+        SA_epochs = options.get("SA_epochs", 500)  # Temperature steps
 
         # while time.perf_counter() - start_time < options['progressive_search_time_limit']:
         # todo: Handle time_limit parameter
@@ -115,6 +116,11 @@ def accelerated_search_for_good_permutation(matrix_group, options=None):
                             "SETPART": SetPartitionModel
                             }
         model = model_collection[options["strategy"]](input_matrix)
+        model.solve()
+        result, duration, permutation_sequence = model.get_apex_solution()
+
+    elif options["strategy"] in ["CG"]:
+        model = CG_Model(input_matrix)
         model.solve()
         result, duration, permutation_sequence = model.get_apex_solution()
 

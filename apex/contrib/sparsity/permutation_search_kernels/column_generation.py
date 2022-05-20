@@ -2,6 +2,7 @@
 Column Generation Method applied to 2:4 sparsity permutation problem
 """
 import random
+from .permutation_utilities import *
 from .exact_methods import *
 
 try:
@@ -79,10 +80,12 @@ class CG_Model(OptimizationModel):
                              "master_time": 0,
                              "sub_problem_time": 0,
                              "gap_closure_time": 0,
-                             "initial_solution_generation": "local_optimization",
-                             # {shuffle_and_chunk, local_optimization}
-                             "sub_problem_type": "greedy_h",
-                             # {blp - binary linear problem, greedy_h - greedy heuristic}
+                             "initial_solution_generation": "simulated_annealing",
+                             # {shuffle_and_chunk, local_optimization, simulated annealing}
+                             "sub_problem_type": "comp_sol_h",
+                             # {blp - binary linear problem, greedy_h - greedy heuristic,
+                             # comp_sol_h - complementary solution heuristic}
+
                              "LO_chunk_size": 32,
                              "LO_number_of_pass": 3,
                              "GSP_sample_size": 16
@@ -156,6 +159,53 @@ class CG_Model(OptimizationModel):
                 self._solution_pool += local_model.solutions
                 self.number_of_solutions += len(local_model.solutions)
 
+    def simulated_annealing(self, result, options):
+        logger.debug("\t Running simulated annealing heuristic")
+
+        permutation_sequence = [n for n in range(self.number_of_columns)]
+        real_swap_num = 0
+        start_time = time.perf_counter()
+
+        SA_initial_t = options.get("SA_initial_t", 1000)  # Starting temperature (boiling point)
+        SA_room_t = options.get("SA_room_t", 10e-3)  # Steady state temperature
+        SA_tfactor = options.get("SA_tfactor", 0.95)  # Temperature falls by this factor
+        SA_epochs = options.get("SA_epochs", 500)  # Temperature steps
+
+        # while time.perf_counter() - start_time < options['progressive_search_time_limit']:
+        # todo: Handle time_limit parameter
+
+        temperature = SA_initial_t
+        while temperature > SA_room_t:
+            for e in range(SA_epochs):
+                src = np.random.randint(result.shape[1])
+                dst = np.random.randint(result.shape[1])
+                src_group = int(src / 4)
+                dst_group = int(dst / 4)
+                if src_group == dst_group:  # channel swapping within a stripe does nothing
+                    continue
+                new_sum, improvement = try_swap(result, dst, src)
+                # mohit: Always accept if that's a good swap!
+                if improvement > options['improvement_threshold']:
+                    result[..., [src, dst]] = result[..., [dst, src]]
+                    permutation_sequence[src], permutation_sequence[dst] = permutation_sequence[dst], \
+                                                                           permutation_sequence[src]
+                    real_swap_num += 1
+                # mohit: accept the worse swap with some probability (determined through SA progress)
+                elif np.exp(improvement / temperature) > np.random.uniform(0, 1):
+                    result[..., [src, dst]] = result[..., [dst, src]]
+                    permutation_sequence[src], permutation_sequence[dst] = permutation_sequence[dst], \
+                                                                           permutation_sequence[src]
+                    real_swap_num += 1
+                else:
+                    continue
+            temperature = temperature * SA_tfactor
+        duration = time.perf_counter() - start_time
+        print("\tFinally swap {} channel pairs until the search termination criteria".format(real_swap_num))
+        for i in range(0, len(permutation_sequence), 4):
+            self._solution_pool.append(permutation_sequence[i:i + 4])
+            self.number_of_solutions += 1
+        return
+
     def generate_initial_solution_set_and_costs(self):  # Initial phase of Column Generation
         logger.info("Generating initial solution set")
 
@@ -164,6 +214,9 @@ class CG_Model(OptimizationModel):
 
         elif self.initial_solution_generation == "local_optimization":
             self.local_optimization(list(range(self.number_of_columns)))
+
+        elif self.initial_solution_generation == "simulated_annealing":
+            self.simulated_annealing(np.transpose(self.input_matrix), {})
 
         else:
             logger.error("Invalid solution generation heuristic")
@@ -236,7 +289,7 @@ class CG_Model(OptimizationModel):
 
     def solve_subproblem_greedy_heuristic(self, dual_costs):
         """
-        It's a BIP of order n-sq (row times columns)
+        It's a heuristic to solve BIP of order n-sq (row times columns)
         :param dual_costs:
         :return:
         """
@@ -264,6 +317,41 @@ class CG_Model(OptimizationModel):
         else:
             return list(min_cost_combination)
 
+    def solve_subproblem_complementary_solution_heuristic(self, dual_costs):
+        """
+        It's a heuristic to solve BIP of order n-sq (row times columns)
+        :param dual_costs:
+        :return:
+        """
+        logger.debug("Subproblem complementary solution heuristic")
+        sample_size = self.GSP_sample_size
+        # Find columns with most expensive shadow price
+        column_sample = sorted(list(range(self.number_of_columns)),
+                               key=lambda x: dual_costs[x], reverse=True)[:sample_size]
+
+        # Find solutions that contain these columns
+        local_problem = set()
+        for solution in self._solution_pool:
+            if any([c in column_sample for c in solution]):
+                for c in solution:
+                    local_problem.add(c)
+
+        subproblem_model = SetPartitionModel(self.input_matrix, matrix_layout="column_major")
+        subproblem_model.subset_columns(local_problem)
+        subproblem_model.solve()
+
+        _reduced_costs = []
+        for comb in subproblem_model.solutions:
+            key, cost = self.get_partition_cost(*comb)
+            r = cost - sum([dual_costs[c] for c in comb])
+            _reduced_costs.append(r)
+
+        if min(_reduced_costs) >= 0:
+            self._terminate_flag = True
+            return []
+        else:
+            return subproblem_model.solutions  # new batch of solutions
+
     def solve_subproblem(self, dual_costs):
         number_of_solves = 1
         all_solutions = []  # Subproblem can generate either 1 oe multiple partitions
@@ -283,6 +371,9 @@ class CG_Model(OptimizationModel):
                 solution = self.solve_subproblem_greedy_heuristic(dual_costs)
                 update_duals(solution)
                 all_solutions.append(solution)
+
+        if self.sub_problem_type == "comp_sol_h":
+            all_solutions = self.solve_subproblem_complementary_solution_heuristic(dual_costs)
 
         return all_solutions
 
@@ -356,16 +447,14 @@ class CG_Model(OptimizationModel):
 
         self.lower_bound = self._master_model.model.objVal
 
-        for var_id, var in self._master_model.xi.items():
-            var.setAttr("vtype", grb.GRB.BINARY)
-        self._master_model.relax_x_vars = False
-
         gap_start_time = time.time()
-        self._master_model.re_solve()
-        self.objective_value = self._master_model.model.objVal
+        final = SetPartitionModel(self.input_matrix, matrix_layout="column_major")
+        final.solve(restricted_column_set=self._solution_pool)
+        self.objective_value = final.model.objVal
+        self.solutions = final.solutions
         gap_end_time = time.time()
         self.gap_closure_time += gap_end_time - gap_start_time
-
+        self.optimization_time = self.master_time + self.sub_problem_time + self.gap_closure_time
         return
 
 
