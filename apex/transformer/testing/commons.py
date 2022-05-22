@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import datetime
 import os
 import random
 from typing import Optional, Union, List
@@ -21,7 +22,9 @@ import torch
 import torch.nn as nn
 
 from apex import transformer
-from apex.transformer.pipeline_parallel.utils import average_losses_across_data_parallel_group
+from apex.transformer.pipeline_parallel.utils import (
+    average_losses_across_data_parallel_group,
+)
 from apex.transformer.testing import global_vars
 
 
@@ -30,7 +33,6 @@ TEST_SUCCESS_MESSAGE = ">> passed the test :-)"
 
 # note (mkozuki): `pre_process` and `post_process` are a placeholder until interleaving schedule test comes.
 class MyLayer(nn.Module):
-
     def __init__(self, hidden_size: int, pre_process: bool, post_process: bool):
         super().__init__()
         self.pre_process = pre_process
@@ -40,16 +42,22 @@ class MyLayer(nn.Module):
     def forward(self, x):
         return self.layer(x)
 
-class MyModel(nn.Module):
 
-    def __init__(self, hidden_size: int, pre_process: bool = False, post_process: bool = False) -> None:
+class MyModel(nn.Module):
+    def __init__(
+        self, hidden_size: int, pre_process: bool = False, post_process: bool = False
+    ) -> None:
         super().__init__()
         self.pre_process = pre_process
         self.post_process = post_process
-        self.layer = MyLayer(hidden_size=hidden_size, pre_process=pre_process, post_process=post_process)
+        self.layer = MyLayer(
+            hidden_size=hidden_size, pre_process=pre_process, post_process=post_process
+        )
         self.input_tensor = None
 
-    def set_input_tensor(self, input_tensor: Union[torch.Tensor, List[torch.Tensor]]) -> None:
+    def set_input_tensor(
+        self, input_tensor: Union[torch.Tensor, List[torch.Tensor]]
+    ) -> None:
         if not isinstance(input_tensor, list):
             input_tensor = [input_tensor]
         self.input_tensor = input_tensor[0]
@@ -81,7 +89,8 @@ def fwd_step_func(batch, model):
     def loss_func(x):
         loss = torch.sum(x)
         averaged_loss = average_losses_across_data_parallel_group([loss])
-        return loss, {'avg': averaged_loss}
+        return loss, {"avg": averaged_loss}
+
     return y, loss_func
 
 
@@ -102,22 +111,28 @@ def set_random_seed(seed):
     transformer.tensor_parallel.model_parallel_cuda_manual_seed(seed)
 
 
-def initialize_distributed(backend='nccl'):
+def initialize_distributed(backend="nccl"):
     """Initialize torch.distributed."""
     # Get local rank in case it is provided.
     # parser = argparse.ArgumentParser()
     # parser.add_argument('--local_rank', type=int, default=None,
     #                    help='local rank passed from distributed launcher')
     # args = parser.parse_args()
+    if backend not in ("nccl", "ucc"):
+        raise RuntimeError(f"Currently only nccl & ucc are supported but {backend}")
+    if backend == "ucc":
+        import torch_ucc  # NOQA
     args = global_vars.get_args()
     local_rank = args.local_rank
 
     # Get rank and world size.
-    rank = int(os.getenv('RANK', '0'))
-    world_size = int(os.getenv("WORLD_SIZE", '1'))
+    rank = int(os.getenv("RANK", "0"))
+    world_size = int(os.getenv("WORLD_SIZE", "1"))
 
-    print('> initializing torch.distributed with local rank: {}, '
-          'rank: {}, world size: {}'.format(local_rank, rank, world_size))
+    print(
+        "> initializing torch.distributed with local rank: {}, "
+        "rank: {}, world size: {}".format(local_rank, rank, world_size)
+    )
 
     # Set the device id.
     device = rank % torch.cuda.device_count()
@@ -126,22 +141,21 @@ def initialize_distributed(backend='nccl'):
     torch.cuda.set_device(device)
 
     # Call the init process.
-    init_method = 'tcp://'
-    master_ip = os.getenv('MASTER_ADDR', 'localhost')
-    master_port = os.getenv('MASTER_PORT', '6000')
-    init_method += master_ip + ':' + master_port
+    init_method = "tcp://"
+    master_ip = os.getenv("MASTER_ADDR", "localhost")
+    master_port = os.getenv("MASTER_PORT", "6000")
+    init_method += master_ip + ":" + master_port
     torch.distributed.init_process_group(
-        backend=backend,
-        world_size=world_size,
-        rank=rank,
-        init_method=init_method)
+        backend=backend, world_size=world_size, rank=rank, init_method=init_method,
+        timeout=datetime.timedelta(seconds=60),
+    )
 
 
 def print_separator(message):
     torch.distributed.barrier()
     filler_len = (78 - len(message)) // 2
-    filler = '-' * filler_len
-    string = '\n' + filler + ' {} '.format(message) + filler
+    filler = "-" * filler_len
+    string = "\n" + filler + " {} ".format(message) + filler
     if torch.distributed.get_rank() == 0:
         print(string, flush=True)
     torch.distributed.barrier()
