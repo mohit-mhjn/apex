@@ -71,10 +71,10 @@ class MasterProblem(SetPartitionModel):
 
 class CG_Model(OptimizationModel):
     def __init__(self, input_matrix):
-        logger.info("This is a BQP-formulation")
+        logger.info("This is a CG-formulation")
         super().__init__(input_matrix)
         self.config["CG"] = {"seed": None,
-                             "maxIterations": 100,
+                             "maxIterations": 1,
                              "number_of_solutions": 0,
                              "number_of_iterations": 0,
                              "master_time": 0,
@@ -88,7 +88,7 @@ class CG_Model(OptimizationModel):
 
                              "LO_chunk_size": 32,
                              "LO_number_of_pass": 3,
-                             "GSP_sample_size": 16
+                             "GSP_sample_size": 4
                              }
 
         self.number_of_iterations = 0
@@ -185,7 +185,7 @@ class CG_Model(OptimizationModel):
                     continue
                 new_sum, improvement = try_swap(result, dst, src)
                 # mohit: Always accept if that's a good swap!
-                if improvement > options['improvement_threshold']:
+                if improvement > options.get('improvement_threshold',10e-9):
                     result[..., [src, dst]] = result[..., [dst, src]]
                     permutation_sequence[src], permutation_sequence[dst] = permutation_sequence[dst], \
                                                                            permutation_sequence[src]
@@ -328,13 +328,26 @@ class CG_Model(OptimizationModel):
         # Find columns with most expensive shadow price
         column_sample = sorted(list(range(self.number_of_columns)),
                                key=lambda x: dual_costs[x], reverse=True)[:sample_size]
-
+        
         # Find solutions that contain these columns
         local_problem = set()
         for solution in self._solution_pool:
             if any([c in column_sample for c in solution]):
                 for c in solution:
                     local_problem.add(c)
+        
+        # Finding additional complements >>
+        i = 0
+        while not len(local_problem)%4 == 0:
+            sol = self._solution_pool[i]
+            # Existance of columns that are in local problem
+            if any([c in local_problem for c in sol]):
+                # Check if there are any columns that my add to this >>
+                # If any c that is not pre-existing in local_problem
+                for c in sol:
+                    if c not in local_problem:
+                        local_problem.add(c)
+            i += 1
 
         subproblem_model = SetPartitionModel(self.input_matrix, matrix_layout="column_major")
         subproblem_model.subset_columns(local_problem)
@@ -398,7 +411,7 @@ class CG_Model(OptimizationModel):
         self._master_model = MasterProblem(self.input_matrix)
         self._master_model.solve(restricted_column_set=self._solution_pool)
         self.starting_solution = self._master_model.model.objVal
-
+        _ = 0
         for _ in range(self.maxIterations):
             logger.debug(f"SOLVING MASTER-PROBLEM IN ITERATION {_ + 1}")
 
@@ -428,7 +441,7 @@ class CG_Model(OptimizationModel):
 
             self._master_model.re_solve()
 
-            if len(progress_tracker) < 100:
+            if len(progress_tracker) < 10:
                 progress_tracker.append(self._master_model.model.objVal)
             else:
                 progress_tracker.pop(0)
@@ -455,6 +468,7 @@ class CG_Model(OptimizationModel):
         gap_end_time = time.time()
         self.gap_closure_time += gap_end_time - gap_start_time
         self.optimization_time = self.master_time + self.sub_problem_time + self.gap_closure_time
+        self.model_solved = True
         return
 
 

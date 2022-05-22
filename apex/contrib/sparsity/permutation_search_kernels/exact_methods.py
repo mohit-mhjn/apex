@@ -16,7 +16,7 @@ except:
 # ==================== BASE ===================
 logging.basicConfig()
 logger = logging.getLogger(__name__ + ': ')
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.ERROR)
 
 
 # ============== Traceback Mechanics =====================

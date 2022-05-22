@@ -32,16 +32,19 @@ class EmulateTorchPretrained(object):
 
 if __name__ == "__main__":
     # All scenario settings configured here >>
-    matrix_set = "custom"  # {'custom', 'pretrained'}
-    strategy_set = ["exhaustive", "progressive channel swap",  # Current standard
-                    "BQP", "BLP", "MDA", "SETPART",  # proposed exact methods
-                    "progressive channel swap - SA",  # "CCG"   # proposed heuristics
-                    ]
-    mode = "debug"  # {'debug', 'compare'}
+    matrix_set = "pretrained"  # {'custom', 'pretrained'}
+
+    strategy_set =  [
+            "progressive channel swap", # "exhaustive",,  # Current standard
+            # "BQP", "BLP", "MDA", "SETPART",  # proposed exact methods
+            "progressive channel swap - SA", "CG",   # proposed heuristics >> ,
+            ]
+
+    mode = "compare"  # {'debug', 'compare'}
 
     if matrix_set == "pretrained":
         pretrained = resnet50(pretrained=True)
-        retrial_per_scenario = 5
+        retrial_per_scenario = 1
         test_matrices = [
             pretrained.layer1[0].conv1.weight,  # 64 x 64
             pretrained.layer1[1].conv1.weight,  # 64 x 256
@@ -61,11 +64,11 @@ if __name__ == "__main__":
         raise Exception("Invalid matrix set")
 
     if mode == "debug":
-        test_matrices = [test_matrices[1]]  # slice the test matrices list to find the right set to debug
-        strategy_set = [strategy_set[2]]  # select strategy index to debug
+        test_matrices = [test_matrices[3]]  # slice the test matrices list to find the right set to debug
+        strategy_set = [strategy_set[-1]]  # select strategy index to debug
 
-    for strategy in strategy_set:
-        for my_matrix_group in test_matrices:
+    for my_matrix_group in test_matrices:
+        for strategy in strategy_set:
             for _ in range(retrial_per_scenario):
                 print("\n[Compare permutation search kernels]: Attempt {} for matrix "
                       "shape ({},{}) using {} strategy".format(_, my_matrix_group.shape[0],
@@ -74,8 +77,8 @@ if __name__ == "__main__":
                 psk.accelerated_search_for_good_permutation(my_matrix_group, options={
                     "strategy": strategy,
                     # "strategy": "progressive channel swap",
-                    "progressive_search_time_limit": 999,  # Relax this limit for experiment
-                    "SA_initial_t": 1,
+                    "progressive_search_time_limit": 60,  # Relax this limit for experiment
+                    "SA_initial_t": 1000,
                     "SA_room_t": 10e-3,
                     "SA_tfactor": 0.90,
-                    "SA_epochs": 100})
+                    "SA_epochs": 500})
