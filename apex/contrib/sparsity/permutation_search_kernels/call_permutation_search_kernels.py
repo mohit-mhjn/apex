@@ -1,6 +1,8 @@
 import numpy as np
 from .permutation_utilities import *
 from .exhaustive_search import Exhaustive_Search
+from .exact_methods import *
+from .column_generation import *
 
 def accelerated_search_for_good_permutation(matrix_group, options=None):
     """This function is used to call the permutation search CUDA kernels.
@@ -56,6 +58,60 @@ def accelerated_search_for_good_permutation(matrix_group, options=None):
                 real_swap_num += 1
         duration = time.perf_counter() - start_time
         print("\tFinally swap {} channel pairs until the search time limit expires.".format(real_swap_num))
+
+    elif options['strategy'] == 'SIMULATED_ANNEALING':
+        real_swap_num = 0
+        start_time = time.perf_counter()
+        # Get Essential Parameters for simulated annealing, defaults returned
+        SA_initial_t = options.get("SA_initial_t", 1000)  # Starting temperature (boiling point)
+        SA_room_t = options.get("SA_room_t", 10e-3)  # Steady state temperature
+        SA_tfactor = options.get("SA_tfactor", 0.95)  # Temperature falls by this factor
+        SA_epochs = options.get("SA_epochs", 500)  # Temperature steps
+
+        # while time.perf_counter() - start_time < options['progressive_search_time_limit']:
+        # todo: Handle time_limit parameter
+
+        temperature = SA_initial_t
+        while temperature > SA_room_t:
+            for e in range(SA_epochs):
+                src = np.random.randint(result.shape[1])
+                dst = np.random.randint(result.shape[1])
+                src_group = int(src / 4)
+                dst_group = int(dst / 4)
+                if src_group == dst_group:  # channel swapping within a stripe does nothing
+                    continue
+                new_sum, improvement = try_swap(result, dst, src)
+                # mohit: Always accept if that's a good swap!
+                if improvement > options['improvement_threshold']:
+                    result[..., [src, dst]] = result[..., [dst, src]]
+                    permutation_sequence[src], permutation_sequence[dst] = permutation_sequence[dst], \
+                                                                           permutation_sequence[src]
+                    real_swap_num += 1
+                # mohit: accept the worse swap with some probability (determined through SA progress)
+                elif np.exp(improvement / temperature) > np.random.uniform(0, 1):
+                    result[..., [src, dst]] = result[..., [dst, src]]
+                    permutation_sequence[src], permutation_sequence[dst] = permutation_sequence[dst], \
+                                                                           permutation_sequence[src]
+                    real_swap_num += 1
+                else:
+                    continue
+            temperature = temperature * SA_tfactor
+        duration = time.perf_counter() - start_time
+        print("\tFinally swap {} channel pairs until the search termination criteria".format(real_swap_num))
+    elif options["strategy"] in ["BQP", "BLP", "MDA", "SETPART"]:
+        model_collection = {"BQP": BqpModel,
+                            "BLP": BlpModel,
+                            "MDA": MdaModel,
+                            "SETPART": SetPartitionModel
+                            }
+        model = model_collection[options["strategy"]](input_matrix)
+        model.solve()
+        result, duration, permutation_sequence = model.get_apex_solution()
+
+    elif options["strategy"] in ["CG"]:
+        model = CG_Model(input_matrix)
+        model.solve()
+        result, duration, permutation_sequence = model.get_apex_solution()
     elif options['strategy'] == 'user defined':    # need to get the permutated matrix (result) by applying customized permutation search function
         print("[accelerated_search_for_good_permutation] Use the user customized permutation search function!")
     else:

@@ -7,6 +7,7 @@ sys.path.append("../")
 from permutation_search_kernels.permutation_utilities import *
 from permutation_search_kernels.exhaustive_search import Exhaustive_Search
 from permutation_search_kernels.channel_swap import Channel_Swap
+from permuattion_search_kernels.exact_methods import call_SetPartition
 
 # Arguments
 import argparse
@@ -187,6 +188,21 @@ if __name__ == "__main__":
             else:                        # find the minimum sparsity needed to transparently transform the input
                 min_sparsity,duration = find_minimum_sparsity(result, Channel_Swap, escape_attempts=escape_attempts, verbosity=verbosity)
                 result = unstructured_prune(result, min_sparsity/100.0)
+
+        elif strat_split[0] == 'SETPART':
+
+            if args.unstructured >= 0.0:
+                result,duration,found_permutation = call_SetPartition(result)
+            else:
+                min_sparsity, duration = find_minimum_sparsity(result, call_SetPartition)
+                result = unstructured_prune(result, min_sparsity / 100.0)
+
+        elif strat_split[0] == "SIMULATED_ANNEALING":
+
+            if args.unstructured >= 0.0:
+                pass # >>>>>>>>>
+
+
 
         # random permutations
         elif strat_split[0] == 'random':
