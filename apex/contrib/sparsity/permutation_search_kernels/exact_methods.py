@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from collections import defaultdict
 from itertools import combinations
-from .permutation_utilities import *
+from .permutation_utilities import sum_after_2_to_4
 
 try:
     import gurobipy as grb

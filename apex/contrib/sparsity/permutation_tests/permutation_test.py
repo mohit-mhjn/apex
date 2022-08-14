@@ -7,7 +7,7 @@ sys.path.append("../")
 from permutation_search_kernels.permutation_utilities import *
 from permutation_search_kernels.exhaustive_search import Exhaustive_Search
 from permutation_search_kernels.channel_swap import Channel_Swap
-from permuattion_search_kernels.exact_methods import call_SetPartition
+from permutation_search_kernels.exact_methods import call_SetPartition
 
 # Arguments
 import argparse
