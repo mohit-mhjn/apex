@@ -8,6 +8,7 @@ from permutation_search_kernels.permutation_utilities import *
 from permutation_search_kernels.exhaustive_search import Exhaustive_Search
 from permutation_search_kernels.channel_swap import Channel_Swap
 from permutation_search_kernels.exact_methods import call_SetPartition
+from permutation_search_kernels.simulated_annealing import Simulated_Annealing
 
 # Arguments
 import argparse
@@ -198,11 +199,26 @@ if __name__ == "__main__":
                 result = unstructured_prune(result, min_sparsity / 100.0)
 
         elif strat_split[0] == "SIMULATED_ANNEALING":
+            # Get Essential Parameters for simulated annealing, defaults returned
+            SA_initial_t = 1000  # Starting temperature (boiling point)
+            SA_room_t =  10e-3 # Steady state temperature
+            SA_tfactor =  0.95  # Temperature falls by this factor
+            SA_epochs =  500  # Temperature steps
+            improvement_threshold = 1e-9
 
             if args.unstructured >= 0.0:
-                pass # >>>>>>>>>
-
-
+                result, duration, found_permutation = Simulated_Annealing(result, initial_temp = SA_initial_t,
+                                                                     room_temp= SA_room_t,
+                                                                     tfactor= SA_tfactor,
+                                                                     epochs= SA_epochs,
+                                                                     threshold=improvement_threshold)
+            else:
+                min_sparsity, duration = find_minimum_sparsity(result, Simulated_Annealing, initial_temp = SA_initial_t,
+                                                                     room_temp= SA_room_t,
+                                                                     tfactor= SA_tfactor,
+                                                                     epochs= SA_epochs,
+                                                                     threshold=improvement_threshold)
+                result = unstructured_prune(result, min_sparsity / 100.0)
 
         # random permutations
         elif strat_split[0] == 'random':
