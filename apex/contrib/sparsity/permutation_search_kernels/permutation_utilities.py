@@ -7,7 +7,8 @@ gpus_tested = False
 gpus_found = 0
 kernels_found = True
 try:
-    import permutation_search_cuda as permutation_search_cuda_kernels
+    from . import permutation_search_cuda as permutation_search_cuda_kernels
+    # import permutation_search_cuda as permutation_search_cuda_kernels
     print(f"Found permutation search CUDA kernels")
 except ImportError:
     

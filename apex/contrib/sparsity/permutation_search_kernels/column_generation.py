@@ -185,11 +185,10 @@ class CG_Model(OptimizationModel):
                     continue
                 new_sum, improvement = try_swap(result, dst, src)
                 # mohit: Always accept if that's a good swap!
-                if improvement > options.get('improvement_threshold', 10e-9):
+                if improvement > options.get('improvement_threshold',10e-9):
                     result[..., [src, dst]] = result[..., [dst, src]]
                     permutation_sequence[src], permutation_sequence[dst] = permutation_sequence[dst], \
                                                                            permutation_sequence[src]
-                    real_swap_num += 1
                 # mohit: accept the worse swap with some probability (determined through SA progress)
                 elif np.exp(improvement / temperature) > np.random.uniform(0, 1):
                     result[..., [src, dst]] = result[..., [dst, src]]
@@ -338,7 +337,8 @@ class CG_Model(OptimizationModel):
 
         # Finding additional complements >>
         i = 0
-        while not len(local_problem) % 4 == 0:
+        while not len(local_problem)%4 == 0:
+
             sol = self._solution_pool[i]
             # Existance of columns that are in local problem
             if any([c in local_problem for c in sol]):
@@ -479,3 +479,4 @@ if __name__ == "__main__":
     opt.show_input_matrix()
     opt.solve()
     # opt.pprint_output()
+

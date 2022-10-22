@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from collections import defaultdict
 from itertools import combinations
-from .permutation_utilities import sum_after_2_to_4
+from .permutation_utilities import *
 
 try:
     import gurobipy as grb
@@ -1088,6 +1088,7 @@ class SetPartitionModel(OptimizationModel):
         self.postprocessing_time += round(post_end_time - post_start_time, 3)
         return
 
+
 def call_SetPartition(input_matrix):
     model = SetPartitionModel(input_matrix)
     model.solve()
@@ -1162,4 +1163,3 @@ if __name__ == "__main__":
 
 # Std dev of partition costs
 # weakness of lower bound
-#
