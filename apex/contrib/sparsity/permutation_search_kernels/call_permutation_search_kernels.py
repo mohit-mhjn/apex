@@ -66,15 +66,14 @@ def accelerated_search_for_good_permutation(matrix_group, options=None):
         SA_initial_t = options.get("SA_initial_t", 1000)  # Starting temperature (boiling point)
         SA_room_t = options.get("SA_room_t", 10e-3)  # Steady state temperature
         SA_tfactor = options.get("SA_tfactor", 0.95)  # Temperature falls by this factor
-        SA_epochs = options.get("SA_epochs", 500)  # Temperature steps
+        SA_epochs = options.get("SA_epochs", 100)  # Temperature steps
 
-        # while time.perf_counter() - start_time < options['progressive_search_time_limit']:
-        # todo: Handle time_limit parameter
-        result, duration, permutation_sequence = Simulated_Annealing(result, initial_temp = SA_initial_t,
-                                                                     room_temp= SA_room_t,
-                                                                     tfactor= SA_tfactor,
-                                                                     epochs= SA_epochs,
-                                                                     threshold=options['improvement_threshold'])
+        result, duration, permutation_sequence = Simulated_Annealing(result, initial_temp=SA_initial_t,
+                                                                     room_temp=SA_room_t,
+                                                                     tfactor=SA_tfactor,
+                                                                     epochs=SA_epochs,
+                                                                     threshold=options['improvement_threshold'],
+                                                                     timelimit=options['progressive_search_time_limit'])
 
     elif options["strategy"] in ["BQP", "BLP", "MDA", "SETPART"]:
         model_collection = {"BQP": BqpModel,

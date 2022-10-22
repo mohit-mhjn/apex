@@ -203,7 +203,7 @@ if __name__ == "__main__":
             SA_initial_t = 1000  # Starting temperature (boiling point)
             SA_room_t =  10e-3 # Steady state temperature
             SA_tfactor =  0.95  # Temperature falls by this factor
-            SA_epochs =  500  # Temperature steps
+            SA_epochs =  100  # Temperature steps
             improvement_threshold = 1e-9
 
             if args.unstructured >= 0.0:
