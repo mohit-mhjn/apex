@@ -1,0 +1,1 @@
+nvcc -O3 -shared -Xcompiler -fPIC -Xcompiler -DTORCH_EXTENSION_NAME=permutation_search_cuda -std=c++11 $(python3 -m pybind11 --includes) permutation_search_kernels.cu -o ../permutation_search_cuda$(python3-config --extension-suffix)
