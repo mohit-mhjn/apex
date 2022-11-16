@@ -36,7 +36,7 @@ class MasterProblem(SetPartitionModel):
         # Equivalent to adding in memberships >>
         new_column.addTerms([1, 1, 1, 1], [self.membership_in_unique_selection[c] for c in partition])
 
-        _key, _cost = self.get_partition_cost(*partition)
+        _key, _cost = self.get_partition_cost_cuda(*partition)
         self.xi[_key] = self.model.addVar(lb=0, ub=1, vtype=grb.GRB.CONTINUOUS,
                                           obj=_cost,
                                           column=new_column, name=f"new_var_subproblem_{_key}")
@@ -74,15 +74,15 @@ class CG_Model(OptimizationModel):
         logger.info("This is a CG-formulation")
         super().__init__(input_matrix)
         self.config["CG"] = {"seed": None,
-                             "maxIterations": 1,
+                             "maxIterations": 100,
                              "number_of_solutions": 0,
                              "number_of_iterations": 0,
                              "master_time": 0,
                              "sub_problem_time": 0,
                              "gap_closure_time": 0,
-                             "initial_solution_generation": "simulated_annealing",
+                             "initial_solution_generation": "shuffle_and_chunk",
                              # {shuffle_and_chunk, local_optimization, simulated annealing}
-                             "sub_problem_type": "comp_sol_h",
+                             "sub_problem_type": "blp",
                              # {blp - binary linear problem, greedy_h - greedy heuristic,
                              # comp_sol_h - complementary solution heuristic}
 
@@ -125,9 +125,9 @@ class CG_Model(OptimizationModel):
         """Yield successive n-sized chunks from shuffled lst"""
         assert isinstance(lst, list), "arg: lst must be list type"
         assert isinstance(n, int), "arg: n must be a int"
-        if self.config["CG"]["seed"]:  # Reconsider this >>
-            random.seed(self.config["CG"]["seed"])
-        random.shuffle(lst)
+        # if self.config["CG"]["seed"]:  # Reconsider this >>
+        #     random.seed(self.config["CG"]["seed"])
+        # random.shuffle(lst)
         for i in range(0, len(lst), n):
             self._solution_pool.append(lst[i:i + n])
             self.number_of_solutions += 1
@@ -229,9 +229,11 @@ class CG_Model(OptimizationModel):
         :return:
         """
         sub_model = grb.Model("CG_subproblem_BLP")
+        
+        column_wise_sum = np.sum(self.input_matrix, axis = 1)
 
         # Variables >>
-        _sub_var_xi = [sub_model.addVar(vtype=grb.GRB.BINARY, name=f"x_{i}", obj=-1 * dual_costs[i])
+        _sub_var_xi = [sub_model.addVar(vtype=grb.GRB.BINARY, name=f"x_{i}", obj=-1*dual_costs[i])
                        for i in range(self.number_of_columns)]
         _sub_var_zij = [[sub_model.addVar(vtype=grb.GRB.CONTINUOUS, lb=0, ub=1, name=f"z_{i}_{j}",
                                           obj=self.input_matrix[i][j])
@@ -275,10 +277,10 @@ class CG_Model(OptimizationModel):
         # print(sub_model.objVal)
 
         # >> we Don't care about the objective value here unless
-        if round(sub_model.objVal, 3) >= 0:
-            logger.debug("This new solution will not improve the basis")
-            self._terminate_flag = True
-            return []
+        # if round(sub_model.objVal, 3) >= 0:
+        #     logger.debug("This new solution will not improve the basis")
+        #     self._terminate_flag = True
+        #     return []
 
         # Retrieve the solution
         # The following has to pass because exactly 4 variables would take value = 1
@@ -366,7 +368,7 @@ class CG_Model(OptimizationModel):
             return subproblem_model.solutions  # new batch of solutions
 
     def solve_subproblem(self, dual_costs):
-        number_of_solves = 1
+        number_of_solves = int(self.number_of_columns/4)
         all_solutions = []  # Subproblem can generate either 1 oe multiple partitions
 
         def update_duals(s):
@@ -412,6 +414,7 @@ class CG_Model(OptimizationModel):
         self._master_model.solve(restricted_column_set=self._solution_pool)
         self.starting_solution = self._master_model.model.objVal
         _ = 0
+        
         for _ in range(self.maxIterations):
             logger.debug(f"SOLVING MASTER-PROBLEM IN ITERATION {_ + 1}")
 
@@ -447,15 +450,15 @@ class CG_Model(OptimizationModel):
                 progress_tracker.pop(0)
                 progress_tracker.append(self._master_model.model.objVal)
                 if (progress_tracker[0] - progress_tracker[-1]) / progress_tracker[-1] < 0.01:
-                    # Improvement in last 50 iterations < 1 %
-                    logger.info("No or (< 1%) improvement in last 100 iterations")
+                    # Improvement in last 10 iterations < 1 %
+                    logger.info("No or (< 1%) improvement in last 10 iterations")
                     break
 
         # Solve set-pack to determine integer output >>
         logger.info(f"CG Completed in {_ + 1} iterations")
         self.number_of_iterations = _ + 1
         self.master_time = self._master_model.optimization_time
-        logger.info("Solution lower bound achieved! Gap closure => Solve set-packing with current solution sample >>")
+        logger.info("Solution lower bound achieved! Solve set-packing with current solution sample >>")
         logger.debug("Updating Variable Type")
 
         self.lower_bound = self._master_model.model.objVal
@@ -471,6 +474,10 @@ class CG_Model(OptimizationModel):
         self.model_solved = True
         return
 
+def call_ColumnGeneration(input_matrix):
+    model = CG_Model(input_matrix)
+    model.solve()
+    return model.get_apex_solution()
 
 if __name__ == "__main__":
     logger.info("Testing Column Generation Model Formulation")

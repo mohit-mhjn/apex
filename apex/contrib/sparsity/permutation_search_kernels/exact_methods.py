@@ -16,7 +16,7 @@ except:
 # ==================== BASE ===================
 logging.basicConfig()
 logger = logging.getLogger(__name__ + ': ')
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.INFO)
 
 
 # ============== Traceback Mechanics =====================
@@ -536,7 +536,7 @@ class BlpModel(OptimizationModel):
         logger.info("This is a BLP-formulation")
         super().__init__(input_matrix)
         self.config["BLP"] = {"relax_z_vars": True,
-                              "relax_x_vars": False}
+                              "relax_x_vars": True}
 
         # Model Specific Things
         self.model = grb.Model('24sparsity-Linearized')
@@ -1006,6 +1006,7 @@ class SetPartitionModel(OptimizationModel):
             self.xi[key] = self.model.addVar(name=f"X_{key}", vtype=x_var_type, obj=cost, lb=0, ub=1)
             for c in q:
                 self._memberships[c].add(key)
+        
 
     # # # ================== Constraints ==================
     def create_constraints(self):
@@ -1050,7 +1051,7 @@ class SetPartitionModel(OptimizationModel):
         logger.info(f"Solving Model ...")
 
         if not self.display_log:
-            self.model.setParam('LogToConsole', 0)
+            self.model.setParam('LogToConsole', 1)
 
         self.model.setParam(grb.GRB.Param.MIPGap, self.mip_gap)
         self.model.setParam(grb.GRB.Param.TimeLimit, self.time_limit)
@@ -1070,10 +1071,13 @@ class SetPartitionModel(OptimizationModel):
                 # Iterator must be empty by now >>
                 if not restricted_column_set:
                     self._solution_sample = combinations(range(cols), 4)
-                for i, j, k, l in self._solution_sample:
+                
+                _covered_set = set()  # removing duplicate solutions
+                for [i, j, k, l] in self._solution_sample:
                     indx = cols * cols * cols * i + cols * cols * j + cols * k + l
-                    if self.xi[indx].x > 0.5:
+                    if self.xi[indx].x > 0.5 and indx not in _covered_set:
                         self.add_solution([i, j, k, l])
+                        _covered_set.add(indx)
             else:
                 logger.warning("CRITICAL: This is a relaxed model - Solutions wouldn't be registered automatically!")
             self.model_solved = True
@@ -1097,69 +1101,69 @@ def call_SetPartition(input_matrix):
 
 if __name__ == "__main__":
 
-    logger.info(" ================== TEST 1 => ")
-    matrix = OptimizationModel.create_input_matrix(24, 24)
-    opt = SetPartitionModel(matrix)
-    opt.solve()
-    opt.construct_solution()
+    # logger.info(" ================== TEST 1 => ")
+    # matrix = OptimizationModel.create_input_matrix(24, 24)
+    # opt = SetPartitionModel(matrix)
+    # opt.solve()
+    # opt.construct_solution()
 
-    logger.info(" *********************************** TESTING baseClass\n\n")
+    # logger.info(" *********************************** TESTING baseClass\n\n")
 
-    matrix = OptimizationModel.create_input_matrix(64, 32, None)
-    opt = OptimizationModel(matrix)
-    opt.subset_columns([4, 5, 6, 7, 8, 9, 10, 11])
-    # opt.show_input_matrix()
-    opt.solve()
-    opt.add_solution([1, 2, 3, 7])
-    opt.add_solution([5, 6, 4, 0])
+    # matrix = OptimizationModel.create_input_matrix(64, 32, None)
+    # opt = OptimizationModel(matrix)
+    # opt.subset_columns([4, 5, 6, 7, 8, 9, 10, 11])
+    # # opt.show_input_matrix()
+    # opt.solve()
+    # opt.add_solution([1, 2, 3, 7])
+    # opt.add_solution([5, 6, 4, 0])
 
-    opt.solutions.append([1, 2, 3, 4])
-    try:
-        opt.construct_solution()
-    except ModelNotSolvedException:
-        pass
-    opt.pprint_output()
+    # opt.solutions.append([1, 2, 3, 4])
+    # try:
+    #     opt.construct_solution()
+    # except ModelNotSolvedException:
+    #     pass
+    # opt.pprint_output()
 
-    logger.info(" *********************************** Testing BQP Model Formulation")
-    logger.info(" ================== TEST 1 => ")
-    matrix = OptimizationModel.create_input_matrix(12, 12)
-    opt = BqpModel(matrix)
-    opt.solve()
-    opt.construct_solution()
-    opt.pprint_output()
+    # logger.info(" *********************************** Testing BQP Model Formulation")
+    # logger.info(" ================== TEST 1 => ")
+    # matrix = OptimizationModel.create_input_matrix(12, 12)
+    # opt = BqpModel(matrix)
+    # opt.solve()
+    # opt.construct_solution()
+    # opt.pprint_output()
 
-    logger.info(" ================== TEST 2 => ")
-    matrix = OptimizationModel.create_input_matrix(24, 24)
-    opt = BqpModel(matrix)
-    opt.subset_columns([8, 9, 10, 11, 12, 13, 14, 15])
-    opt.solve()
-    opt.construct_solution()
-    opt.pprint_output()
+    # logger.info(" ================== TEST 2 => ")
+    # matrix = OptimizationModel.create_input_matrix(24, 24)
+    # opt = BqpModel(matrix)
+    # opt.subset_columns([8, 9, 10, 11, 12, 13, 14, 15])
+    # opt.solve()
+    # opt.construct_solution()
+    # opt.pprint_output()
 
     logger.info(" *********************************** Testing BLP Model Formulation")
     logger.info(" ================== TEST 1 => ")
-    matrix = OptimizationModel.create_input_matrix(16, 16)
+    matrix = OptimizationModel.create_input_matrix(256, 256)
     opt = BlpModel(matrix)
-    opt.subset_columns([0, 1, 2, 6, 7, 8, 11, 12])
+    # opt.subset_columns([0, 1, 2, 6, 7, 8, 11, 12])
     opt.solve()
-    opt.construct_solution()
-    opt.pprint_output()
+    # opt.construct_solution()
+    # opt.pprint_output()
 
-    logger.info(" ================== TEST 2 => ")
-    matrix = OptimizationModel.create_input_matrix(20, 20)
-    opt = BlpModel(matrix)
-    opt.solve()
-    opt.construct_solution()
-    opt.pprint_output()
+    # logger.info(" ================== TEST 2 => ")
+    # matrix = OptimizationModel.create_input_matrix(20, 20)
+    # opt = BlpModel(matrix)
+    # opt.solve()
+    # opt.construct_solution()
+    # opt.pprint_output()
 
-    logger.info(" *********************************** Testing Set Packing Model Formulation")
-    logger.info(" ================== TEST 1 => ")
-    matrix = OptimizationModel.create_input_matrix(64, 32)
-    opt = SetPartitionModel(matrix)
-    opt.solve()
-    # opt.solve(restricted_column_set=[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 0]])
-    opt.construct_solution()
-    opt.pprint_output()
+    # logger.info(" *********************************** Testing Set Packing Model Formulation")
+    # logger.info(" ================== TEST 1 => ")
+    # matrix = OptimizationModel.create_input_matrix(64, 32)
+    # opt = SetPartitionModel(matrix)
+    # opt.solve()
+    # # opt.solve(restricted_column_set=[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 0]])
+    # opt.construct_solution()
+    # opt.pprint_output()
 
 # Std dev of partition costs
 # weakness of lower bound

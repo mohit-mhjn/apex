@@ -25,7 +25,8 @@ def Simulated_Annealing(result, initial_temp = 1000, room_temp = 0.001,
     best_permutation_seq = [n for n in permutation_sequence]
     best_result = result.copy()
     best_magnitude = sum_after_2_to_4(best_result)
-    while temperature > room_temp and time.perf_counter() - start_time < timelimit:
+
+    while temperature >= room_temp and time.perf_counter() - start_time < timelimit:
         for e in range(epochs):
             src = np.random.randint(result.shape[1])
             dst = np.random.randint(result.shape[1])
@@ -49,16 +50,18 @@ def Simulated_Annealing(result, initial_temp = 1000, room_temp = 0.001,
                     best_magnitude = new_magnitude
 
             # mohit: accept the worse swap with some probability (determined through SA progress)
-            elif np.exp(improvement / temperature) > np.random.uniform(0, 1):
+            elif np.exp(50*improvement / temperature) > np.random.uniform(0, 1):
                 result[..., [src, dst]] = result[..., [dst, src]]
                 permutation_sequence[src], permutation_sequence[dst] = permutation_sequence[dst], \
                                                                        permutation_sequence[src]
                 real_swap_num += 1
             else:
                 continue
+            
             if time.perf_counter() - start_time > timelimit:
                 break
-        temperature = temperature * tfactor
+            # print(sum_after_2_to_4(result))
+        temperature = temperature*tfactor
     duration = time.perf_counter() - start_time
-    print("\tFinally swap {} channel pairs until the search termination criteria".format(real_swap_num))
+    # print("\tFinally swap {} channel pairs until the search termination criteria".format(real_swap_num))
     return best_result, duration, best_permutation_seq

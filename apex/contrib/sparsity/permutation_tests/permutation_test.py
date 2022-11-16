@@ -9,7 +9,7 @@ from permutation_search_kernels.exhaustive_search import Exhaustive_Search
 from permutation_search_kernels.channel_swap import Channel_Swap
 from permutation_search_kernels.exact_methods import call_SetPartition
 from permutation_search_kernels.simulated_annealing import Simulated_Annealing
-
+from permutation_search_kernels.column_generation import call_ColumnGeneration
 # Arguments
 import argparse
 def str2bool(v):
@@ -197,13 +197,21 @@ if __name__ == "__main__":
             else:
                 min_sparsity, duration = find_minimum_sparsity(result, call_SetPartition)
                 result = unstructured_prune(result, min_sparsity / 100.0)
+        
+        elif strat_split[0] == "COLUMN_GEN":
+            
+            if args.unstructured >= 0.0:
+                result,duration,found_permutation = call_ColumnGeneration(result)
+            else:
+                min_sparsity, duration = find_minimum_sparsity(result, call_ColumnGeneration)
+                result = unstructured_prune(result, min_sparsity / 100.0)
 
         elif strat_split[0] == "SIMULATED_ANNEALING":
             # Get Essential Parameters for simulated annealing, defaults returned
             SA_initial_t = 1000  # Starting temperature (boiling point)
             SA_room_t =  10e-3 # Steady state temperature
             SA_tfactor =  0.95  # Temperature falls by this factor
-            SA_epochs =  100  # Temperature steps
+            SA_epochs =  500  # Temperature steps
             improvement_threshold = 1e-9
 
             if args.unstructured >= 0.0:
