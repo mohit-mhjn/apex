@@ -35,8 +35,7 @@ class MasterProblem(SetPartitionModel):
         _key, _cost = self.get_partition_cost_cuda(*partition)
         
         # Do not add duplicate solutions --> 
-        if not _key in self._key_partition_dict:
-            
+        if not _key in self._key_partition_dict:  
             new_column = grb.Column()
             
             # Equivalent to adding in memberships >>
@@ -49,6 +48,7 @@ class MasterProblem(SetPartitionModel):
             self._key_partition_dict[_key] = partition
             for c in partition:
                 self._memberships[c].add(_key)
+        
             return True
         else:
             return False
@@ -84,12 +84,12 @@ class CG_Model(OptimizationModel):
         logger.info("This is a CG-formulation")
         super().__init__(input_matrix)
         self.config["CG"] = {"seed": 1,
-                             "maxIterations": 1000,
+                             "maxIterations": 1,
                              "max_tail_length": 100, #  < 1% improvement in last this many iterations to terminate
                               
                              "starting_solution_method": ["shuffle_and_chunk"],
                              # {shuffle_and_chunk, local_optimization}
-                             "shuffle_and_chunk_attempts" : 3, 
+                             "shuffle_and_chunk_attempts" : 1, 
                              "local_optimization_chunk_size": 16,
                              "local_optimization_number_of_attempts": 3,
                              
@@ -323,7 +323,6 @@ class CG_Model(OptimizationModel):
         self._master_model = MasterProblem(self.input_matrix)
         self._master_model.solve(restricted_column_set=self._solution_pool)
         self.starting_solution = self._master_model.model.objVal
-        _ = 0
         
         for _ in range(self.maxIterations):
             logger.debug(f"SOLVING MASTER-PROBLEM IN ITERATION {_ + 1}")
@@ -346,10 +345,10 @@ class CG_Model(OptimizationModel):
 
             n = 0
             for s in new_solutions:
-                if self._master_model.extend_model_variable(s):
-                    self._solution_pool.append(s)
-                    self.number_of_solutions += 1
-                    n += 1
+                self._master_model.extend_model_variable(s)
+                self._solution_pool.append(s)
+                self.number_of_solutions += 1
+                n += 1
                     
             if n == 0: 
                 self._terminate_flag = True
