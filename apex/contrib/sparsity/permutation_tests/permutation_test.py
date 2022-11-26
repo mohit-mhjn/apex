@@ -190,7 +190,7 @@ if __name__ == "__main__":
                 min_sparsity,duration = find_minimum_sparsity(result, Channel_Swap, escape_attempts=escape_attempts, verbosity=verbosity)
                 result = unstructured_prune(result, min_sparsity/100.0)
 
-        elif strat_split[0] == 'SETPART':
+        elif strat_split[0] == 'set_partitioning':
 
             if args.unstructured >= 0.0:
                 result,duration,found_permutation = call_SetPartition(result)
@@ -198,7 +198,7 @@ if __name__ == "__main__":
                 min_sparsity, duration = find_minimum_sparsity(result, call_SetPartition)
                 result = unstructured_prune(result, min_sparsity / 100.0)
         
-        elif strat_split[0] == "COLUMN_GEN":
+        elif strat_split[0] == "column_generation":
             
             if args.unstructured >= 0.0:
                 result,duration,found_permutation = call_ColumnGeneration(result)
@@ -206,7 +206,7 @@ if __name__ == "__main__":
                 min_sparsity, duration = find_minimum_sparsity(result, call_ColumnGeneration)
                 result = unstructured_prune(result, min_sparsity / 100.0)
 
-        elif strat_split[0] == "SIMULATED_ANNEALING":
+        elif strat_split[0] == "simulated_annealing":
             # Get Essential Parameters for simulated annealing, defaults returned
             SA_initial_t = 1000  # Starting temperature (boiling point)
             SA_room_t =  10e-3 # Steady state temperature

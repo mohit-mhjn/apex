@@ -31,17 +31,27 @@ class MasterProblem(SetPartitionModel):
         assert len(partition) == 4, "A partition has exactly 4 columns"
         assert all([c < self.number_of_columns for c in partition]), "Column indices out of scope"
         assert self.model_solved, "This method is only applicable on a solved model"
-
-        new_column = grb.Column()
-        # Equivalent to adding in memberships >>
-        new_column.addTerms([1, 1, 1, 1], [self.membership_in_unique_selection[c] for c in partition])
-
+        
         _key, _cost = self.get_partition_cost_cuda(*partition)
-        self.xi[_key] = self.model.addVar(lb=0, ub=1, vtype=grb.GRB.CONTINUOUS,
-                                          obj=_cost,
-                                          column=new_column, name=f"new_var_subproblem_{_key}")
+        
+        # Do not add duplicate solutions --> 
+        if not _key in self._key_partition_dict:
+            
+            new_column = grb.Column()
+            
+            # Equivalent to adding in memberships >>
+            new_column.addTerms([1, 1, 1, 1], [self.membership_in_unique_selection[c] for c in partition])
 
-        return
+            self.xi[_key] = self.model.addVar(lb=0, ub=1, vtype=grb.GRB.CONTINUOUS,
+                                            obj=_cost,
+                                            column=new_column, name=f"new_var_subproblem_{_key}")
+            # update to keys dict -
+            self._key_partition_dict[_key] = partition
+            for c in partition:
+                self._memberships[c].add(_key)
+            return True
+        else:
+            return False
 
     def re_solve(self):
         assert self.model_solved, "Only solved model can re_solve"
@@ -73,22 +83,20 @@ class CG_Model(OptimizationModel):
     def __init__(self, input_matrix):
         logger.info("This is a CG-formulation")
         super().__init__(input_matrix)
-        self.config["CG"] = {"seed": None,
-                             "maxIterations": 100,
-                             "number_of_solutions": 0,
-                             "number_of_iterations": 0,
-                             "master_time": 0,
-                             "sub_problem_time": 0,
-                             "gap_closure_time": 0,
-                             "initial_solution_generation": "shuffle_and_chunk",
-                             # {shuffle_and_chunk, local_optimization, simulated annealing}
+        self.config["CG"] = {"seed": 1,
+                             "maxIterations": 1000,
+                             "max_tail_length": 100, #  < 1% improvement in last this many iterations to terminate
+                              
+                             "starting_solution_method": ["shuffle_and_chunk"],
+                             # {shuffle_and_chunk, local_optimization}
+                             "shuffle_and_chunk_attempts" : 3, 
+                             "local_optimization_chunk_size": 16,
+                             "local_optimization_number_of_attempts": 3,
+                             
                              "sub_problem_type": "blp",
-                             # {blp - binary linear problem, greedy_h - greedy heuristic,
-                             # comp_sol_h - complementary solution heuristic}
-
-                             "LO_chunk_size": 32,
-                             "LO_number_of_pass": 3,
-                             "GSP_sample_size": 4
+                             # {blp - binary linear problem, greedy, }
+                             "greedy_sample_size": 4,
+                            
                              }
 
         self.number_of_iterations = 0
@@ -98,19 +106,19 @@ class CG_Model(OptimizationModel):
         self.objective_value = 0
         self.starting_solution = 0
         self.lower_bound = 0
+        self.number_of_solutions = 0
 
         # Model Specific Things
         self.maxIterations = self.config["CG"]["maxIterations"]
-        self.number_of_solutions = self.config["CG"]["number_of_solutions"]
-        self.initial_solution_generation = self.config["CG"]["initial_solution_generation"]
-        # {shuffle_and_chunk, local_optimization}
+        self.starting_solution_method = self.config["CG"]["starting_solution_method"]
         self.sub_problem_type = self.config["CG"]["sub_problem_type"]
-        # {blp - binary linear problem, greedy_h - greedy heuristic}
-
+        self.max_tail_length = self.config["CG"]["max_tail_length"]
+        
         # Heuristic Parameters >>
-        self.LO_chunk_size = self.config["CG"]["LO_chunk_size"]
-        self.LO_number_of_pass = self.config["CG"]["LO_number_of_pass"]
-        self.GSP_sample_size = self.config["CG"]["GSP_sample_size"]
+        self.shuffle_and_chunk_attempts = self.config["CG"]["shuffle_and_chunk_attempts"]
+        self.local_optimization_chunk_size = self.config["CG"]["local_optimization_chunk_size"]
+        self.local_optimization_number_of_attempts = self.config["CG"]["local_optimization_number_of_attempts"]
+        self.greedy_sample_size = self.config["CG"]["greedy_sample_size"]
 
         # Internals >>
         self._iteration_counter = 0
@@ -125,22 +133,24 @@ class CG_Model(OptimizationModel):
         """Yield successive n-sized chunks from shuffled lst"""
         assert isinstance(lst, list), "arg: lst must be list type"
         assert isinstance(n, int), "arg: n must be a int"
-        # if self.config["CG"]["seed"]:  # Reconsider this >>
-        #     random.seed(self.config["CG"]["seed"])
-        # random.shuffle(lst)
-        for i in range(0, len(lst), n):
-            self._solution_pool.append(lst[i:i + n])
-            self.number_of_solutions += 1
+        if self.config["CG"]["seed"]:
+            random.seed(self.config["CG"]["seed"])
+        for _ in range(self.shuffle_and_chunk_attempts):
+            random.shuffle(lst)
+            for i in range(0, len(lst), n):
+                self._solution_pool.append(sorted(lst[i:i + n])) # in lex order
+                self.number_of_solutions += 1
 
     def local_optimization(self, lst):
-        """Divide columns into N-chunks
+        """
+        Divide columns into N-chunks
         solve optimal for each chunk
         Add to the solution (This will yield a local minima)
         """
         assert isinstance(lst, list), "arg: lst must be list type"
         # Idea - solve set partitioning within these n-indices
-        local_problem_size = self.LO_chunk_size
-        number_of_pass = self.LO_number_of_pass
+        local_problem_size = self.local_optimization_chunk_size
+        number_of_pass = self.local_optimization_number_of_attempts
         if self.config["CG"]["seed"]:
             random.seed(self.config["CG"]["seed"])
         for _ in range(number_of_pass):
@@ -159,78 +169,27 @@ class CG_Model(OptimizationModel):
                 self._solution_pool += local_model.solutions
                 self.number_of_solutions += len(local_model.solutions)
 
-    def simulated_annealing(self, result, options):
-        logger.debug("\t Running simulated annealing heuristic")
-
-        permutation_sequence = [n for n in range(self.number_of_columns)]
-        real_swap_num = 0
-        start_time = time.perf_counter()
-
-        SA_initial_t = options.get("SA_initial_t", 1000)  # Starting temperature (boiling point)
-        SA_room_t = options.get("SA_room_t", 10e-3)  # Steady state temperature
-        SA_tfactor = options.get("SA_tfactor", 0.95)  # Temperature falls by this factor
-        SA_epochs = options.get("SA_epochs", 500)  # Temperature steps
-
-        # while time.perf_counter() - start_time < options['progressive_search_time_limit']:
-        # todo: Handle time_limit parameter
-
-        temperature = SA_initial_t
-        while temperature > SA_room_t:
-            for e in range(SA_epochs):
-                src = np.random.randint(result.shape[1])
-                dst = np.random.randint(result.shape[1])
-                src_group = int(src / 4)
-                dst_group = int(dst / 4)
-                if src_group == dst_group:  # channel swapping within a stripe does nothing
-                    continue
-                new_sum, improvement = try_swap(result, dst, src)
-                # mohit: Always accept if that's a good swap!
-                if improvement > options.get('improvement_threshold',10e-9):
-                    result[..., [src, dst]] = result[..., [dst, src]]
-                    permutation_sequence[src], permutation_sequence[dst] = permutation_sequence[dst], \
-                                                                           permutation_sequence[src]
-                # mohit: accept the worse swap with some probability (determined through SA progress)
-                elif np.exp(improvement / temperature) > np.random.uniform(0, 1):
-                    result[..., [src, dst]] = result[..., [dst, src]]
-                    permutation_sequence[src], permutation_sequence[dst] = permutation_sequence[dst], \
-                                                                           permutation_sequence[src]
-                    real_swap_num += 1
-                else:
-                    continue
-            temperature = temperature * SA_tfactor
-        duration = time.perf_counter() - start_time
-        print("\tFinally swap {} channel pairs until the search termination criteria".format(real_swap_num))
-        for i in range(0, len(permutation_sequence), 4):
-            self._solution_pool.append(permutation_sequence[i:i + 4])
-            self.number_of_solutions += 1
-        return
-
     def generate_initial_solution_set_and_costs(self):  # Initial phase of Column Generation
         logger.info("Generating initial solution set")
 
-        if self.initial_solution_generation == "shuffle_and_chunk":
+        if "shuffle_and_chunk" in self.starting_solution_method:
             self.shuffle_and_chunk(list(range(self.number_of_columns)), 4)  # [[3, 4, 5, 7], [0, 1, 2, 6]]
 
-        elif self.initial_solution_generation == "local_optimization":
+        if "local_optimization" in self.starting_solution_method:
             self.local_optimization(list(range(self.number_of_columns)))
 
-        elif self.initial_solution_generation == "simulated_annealing":
-            self.simulated_annealing(np.transpose(self.input_matrix), {})
-
-        else:
-            logger.error("Invalid solution generation heuristic")
-            raise ModelNotSolvedException
         return
+    
+    # *******************************************************************
+    # *******************************************************************
 
-    def solve_blp_subproblem_model(self, dual_costs):
+    def solve_subproblem_blp_model(self, dual_costs):
         """
         It's a BIP of order n-sq (row times columns)
         :param dual_costs:
         :return:
         """
         sub_model = grb.Model("CG_subproblem_BLP")
-        
-        column_wise_sum = np.sum(self.input_matrix, axis = 1)
 
         # Variables >>
         _sub_var_xi = [sub_model.addVar(vtype=grb.GRB.BINARY, name=f"x_{i}", obj=-1*dual_costs[i])
@@ -276,17 +235,11 @@ class CG_Model(OptimizationModel):
         sub_model.optimize()
         # print(sub_model.objVal)
 
-        # >> we Don't care about the objective value here unless
-        # if round(sub_model.objVal, 3) >= 0:
-        #     logger.debug("This new solution will not improve the basis")
-        #     self._terminate_flag = True
-        #     return []
-
         # Retrieve the solution
         # The following has to pass because exactly 4 variables would take value = 1
         # So, this is also an implicit solution validation
         [i, j, k, l] = [_i for _i in range(self.number_of_columns) if _sub_var_xi[_i].x >= 0.5]
-        return [i, j, k, l]
+        return sub_model.objVal, [i, j, k, l]
 
     def solve_subproblem_greedy_heuristic(self, dual_costs):
         """
@@ -295,100 +248,57 @@ class CG_Model(OptimizationModel):
         :return:
         """
         logger.debug("Subproblem greedy heuristic")
-        sample_size = self.GSP_sample_size
+        sample_size = self.greedy_sample_size
         # Find columns with most expensive shadow price
         # Make their combinations and find the reduced costs
         # the least reduced costs >>
         column_sample = sorted(list(range(self.number_of_columns)),
                                key=lambda x: dual_costs[x], reverse=True)[:sample_size]
-        min_cost_combination = None
+        min_cost_combination = []
         min_cost = grb.GRB.INFINITY
         column_sample = sorted(column_sample)
         for comb in combinations(column_sample, 4):
-            key, cost = self.get_partition_cost(*comb)
-            if key in self._master_model.xi:
-                continue
+            key, cost = self.get_partition_cost_cuda(*comb)
             reduced_cost = cost - sum([dual_costs[c] for c in comb])
             if reduced_cost < min_cost:
                 min_cost_combination = comb
                 min_cost = reduced_cost
-        if min_cost >= 0:
-            self._terminate_flag = True
-            return []
-        else:
-            return list(min_cost_combination)
-
-    def solve_subproblem_complementary_solution_heuristic(self, dual_costs):
+        return min_cost, list(min_cost_combination)
+    
+    def solve_subproblem_simulated_annealing(self, dual_costs):
         """
-        It's a heuristic to solve BIP of order n-sq (row times columns)
-        :param dual_costs:
-        :return:
+        Again a subproblem heuristic, solving BIP using simulated annealing
         """
-        logger.debug("Subproblem complementary solution heuristic")
-        sample_size = self.GSP_sample_size
-        # Find columns with most expensive shadow price
+        logger.info("Subproblem simulated annealing")
+        # Starting solution 
         column_sample = sorted(list(range(self.number_of_columns)),
-                               key=lambda x: dual_costs[x], reverse=True)[:sample_size]
-
-        # Find solutions that contain these columns
-        local_problem = set()
-        for solution in self._solution_pool:
-            if any([c in column_sample for c in solution]):
-                for c in solution:
-                    local_problem.add(c)
-
-        # Finding additional complements >>
-        i = 0
-        while not len(local_problem)%4 == 0:
-
-            sol = self._solution_pool[i]
-            # Existance of columns that are in local problem
-            if any([c in local_problem for c in sol]):
-                # Check if there are any columns that my add to this >>
-                # If any c that is not pre-existing in local_problem
-                for c in sol:
-                    if c not in local_problem:
-                        local_problem.add(c)
-            i += 1
-
-        subproblem_model = SetPartitionModel(self.input_matrix, matrix_layout="column_major")
-        subproblem_model.subset_columns(local_problem)
-        subproblem_model.solve()
-
-        _reduced_costs = []
-        for comb in subproblem_model.solutions:
-            key, cost = self.get_partition_cost(*comb)
-            r = cost - sum([dual_costs[c] for c in comb])
-            _reduced_costs.append(r)
-
-        if min(_reduced_costs) >= 0:
-            self._terminate_flag = True
-            return []
-        else:
-            return subproblem_model.solutions  # new batch of solutions
+                               key=lambda x: dual_costs[x], reverse=True)
+        pass
+        
 
     def solve_subproblem(self, dual_costs):
-        number_of_solves = int(self.number_of_columns/4)
-        all_solutions = []  # Subproblem can generate either 1 oe multiple partitions
+        number_of_solves = int(self.number_of_columns/4) # ccg or just one solution
+        all_solutions = []  # Subproblem can generate either 1 or multiple partitions
 
         def update_duals(s):
             for c in s:
                 dual_costs[c] = -1 * grb.GRB.INFINITY
-
-        if self.sub_problem_type == "blp":
-            for i in range(number_of_solves):
-                solution = self.solve_blp_subproblem_model(dual_costs)
+        
+        method = {
+            "blp": self.solve_subproblem_blp_model,
+            "greedy": self.solve_subproblem_greedy_heuristic
+        }[self.sub_problem_type]
+        
+        for i in range(number_of_solves):
+            r, solution = method(dual_costs)
+            if i == 0 and r > 0:
+                self._terminate_flag = True
+                logger.info(f"subproblem terminated! with r[0] = {r}\n No new column can enter the basis!")
+                # returns empty list of all_solutions
+                break
+            else:
                 update_duals(solution)
                 all_solutions.append(solution)
-
-        if self.sub_problem_type == "greedy_h":
-            for i in range(number_of_solves):
-                solution = self.solve_subproblem_greedy_heuristic(dual_costs)
-                update_duals(solution)
-                all_solutions.append(solution)
-
-        if self.sub_problem_type == "comp_sol_h":
-            all_solutions = self.solve_subproblem_complementary_solution_heuristic(dual_costs)
 
         return all_solutions
 
@@ -434,31 +344,39 @@ class CG_Model(OptimizationModel):
             subproblem_end = time.time()
             self.sub_problem_time += subproblem_end - subproblem_start
 
-            if self._terminate_flag:
-                break
-
+            n = 0
             for s in new_solutions:
-                self._solution_pool.append(s)
-                self._master_model.extend_model_variable(s)
-                self.number_of_solutions += 1
+                if self._master_model.extend_model_variable(s):
+                    self._solution_pool.append(s)
+                    self.number_of_solutions += 1
+                    n += 1
+                    
+            if n == 0: 
+                self._terminate_flag = True
+                logger.info("No new solutions were discovered in this iteration!  - !! Terminating CG !!")
+            
+            if self._terminate_flag:
+                # this could happen due to other reasons also (like some heuristic set this as true)
+                break
 
             self._master_model.re_solve()
 
-            if len(progress_tracker) < 10:
+            if len(progress_tracker) < self.max_tail_length:
                 progress_tracker.append(self._master_model.model.objVal)
             else:
                 progress_tracker.pop(0)
                 progress_tracker.append(self._master_model.model.objVal)
-                if (progress_tracker[0] - progress_tracker[-1]) / progress_tracker[-1] < 0.01:
-                    # Improvement in last 10 iterations < 1 %
-                    logger.info("No or (< 1%) improvement in last 10 iterations")
+                if (progress_tracker[0] - progress_tracker[-1]) / progress_tracker[-1] < 0.0001:
+                    # Improvement in last few iterations < 1 %
+                    logger.info(f"No or (< 1%) improvement in last {self.max_tail_length} iterations")
                     break
 
         # Solve set-pack to determine integer output >>
         logger.info(f"CG Completed in {_ + 1} iterations")
         self.number_of_iterations = _ + 1
         self.master_time = self._master_model.optimization_time
-        logger.info("Solution lower bound achieved! Solve set-packing with current solution sample >>")
+        logger.info("Solve set-packing with current solution sample >>")
+        
         logger.debug("Updating Variable Type")
 
         self.lower_bound = self._master_model.model.objVal

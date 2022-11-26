@@ -981,7 +981,7 @@ class SetPartitionModel(OptimizationModel):
         # Internals >>
         self._memberships = defaultdict(set)
         self._solution_sample = []
-        self._all_costs = []
+        self._key_partition_dict = {}
 
     # # ================== Decision variables ==================
     def create_decision_variables(self, restricted_column_set):
@@ -1002,12 +1002,11 @@ class SetPartitionModel(OptimizationModel):
         for q in self._solution_sample:
             # Generate costs and insert variables on the fly
             key, cost = self.get_partition_cost(*q)
-            self._all_costs.append(cost)
             self.xi[key] = self.model.addVar(name=f"X_{key}", vtype=x_var_type, obj=cost, lb=0, ub=1)
             for c in q:
                 self._memberships[c].add(key)
+            self._key_partition_dict[key] = q
         
-
     # # # ================== Constraints ==================
     def create_constraints(self):
         """
@@ -1025,6 +1024,12 @@ class SetPartitionModel(OptimizationModel):
             name=f'uniqueness_for_column_{i}',
             rhs=1)
             for i in range(self.number_of_columns)}
+        
+        self.total_partitions_limited = self.model.addLConstr(
+            lhs=grb.quicksum([x for _,x in self.xi.items()]),
+            sense=grb.GRB.EQUAL,
+            name=f'number_of_partitions',
+            rhs=self.number_of_partitions)
 
         return
 
